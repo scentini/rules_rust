@@ -14,7 +14,9 @@
 
 """Module with Rust definitions required to write custom Rust rules."""
 
-load("//rust/private:providers.bzl", _ClippyInfo = "ClippyInfo", _CrateInfo = "CrateInfo")
+load("//rust/private:providers.bzl", _ClippyInfo = "ClippyInfo", _CrateInfo = "CrateInfo", _DepInfo = "DepInfo", _BuildInfo = "BuildInfo")
 
 CrateInfo = _CrateInfo
 ClippyInfo = _ClippyInfo
+DepInfo = _DepInfo
+BuildInfo = _BuildInfo

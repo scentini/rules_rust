@@ -1,0 +1,5 @@
+load(":dep_counter.bzl", "dep_counter")
+
+package(default_visibility = ["//visibility:public"])
+
+dep_counter(name = "main", deps = ["//test/aspect_compiles_rust/first_crate:crate_one"])

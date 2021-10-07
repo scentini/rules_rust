@@ -1,0 +1,15 @@
+load(
+    "//rust:rust.bzl",
+    "rust_library",
+)
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "crate_one",
+    srcs = ["lib.rs"],
+    deps = [
+        "//test/aspect_compiles_rust/second_crate:crate_two",
+        "//test/aspect_compiles_rust/third_crate:crate_three",
+    ],
+)

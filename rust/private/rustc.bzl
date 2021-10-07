@@ -32,17 +32,6 @@ load(
     "relativize",
 )
 
-BuildInfo = provider(
-    doc = "A provider containing `rustc` build settings for a given Crate.",
-    fields = {
-        "dep_env": "File: extra build script environment varibles to be set to direct dependencies.",
-        "flags": "File: file containing additional flags to pass to rustc",
-        "link_flags": "File: file containing flags to pass to the linker",
-        "out_dir": "File: directory containing the result of a build script",
-        "rustc_env": "File: file containing additional environment variables to set for rustc.",
-    },
-)
-
 AliasableDepInfo = provider(
     doc = "A provider mapping an alias name to a Crate's information.",
     fields = {
@@ -131,31 +120,32 @@ def collect_deps(label, deps, proc_macro_deps, aliases):
 
     aliases = {k.label: v for k, v in aliases.items()}
     for dep in depset(transitive = [deps, proc_macro_deps]).to_list():
-        if rust_common.crate_info in dep:
+        print(dep.label)
+        if dep.crate_info:
             # This dependency is a rust_library
-            direct_dep = dep[rust_common.crate_info]
+            direct_dep = dep.crate_info
             direct_crates.append(AliasableDepInfo(
                 name = aliases.get(dep.label, direct_dep.name),
                 dep = direct_dep,
             ))
 
-            transitive_crates.append(depset([dep[rust_common.crate_info]], transitive = [dep[rust_common.dep_info].transitive_crates]))
-            transitive_noncrates.append(dep[rust_common.dep_info].transitive_noncrates)
-            transitive_noncrate_libs.append(dep[rust_common.dep_info].transitive_libs)
-            transitive_build_infos.append(dep[rust_common.dep_info].transitive_build_infos)
-        elif CcInfo in dep:
+            transitive_crates.append(depset([dep.crate_info], transitive = [dep.dep_info.transitive_crates]))
+            transitive_noncrates.append(dep.dep_info.transitive_noncrates)
+            transitive_noncrate_libs.append(dep.dep_info.transitive_libs)
+            transitive_build_infos.append(dep.dep_info.transitive_build_infos)
+        elif dep.cc_info:
             # This dependency is a cc_library
 
             # TODO: We could let the user choose how to link, instead of always preferring to link static libraries.
-            linker_inputs = dep[CcInfo].linking_context.linker_inputs.to_list()
+            linker_inputs = dep.cc_info.linking_context.linker_inputs.to_list()
             libs = [get_preferred_artifact(lib) for li in linker_inputs for lib in li.libraries]
             transitive_noncrate_libs.append(depset(libs))
-            transitive_noncrates.append(dep[CcInfo].linking_context.linker_inputs)
-        elif BuildInfo in dep:
+            transitive_noncrates.append(dep.cc_info.linking_context.linker_inputs)
+        elif dep.build_info:
             if build_info:
                 fail("Several deps are providing build information, only one is allowed in the dependencies", "deps")
-            build_info = dep[BuildInfo]
-            transitive_build_infos.append(depset([build_info]))
+            build_info = dep.build_info
+            transitive_build_infos.append(depset([dep.build_info]))
         else:
             fail("rust targets can only depend on rust_library, rust_*_library or cc_library targets." + str(dep), "deps")
 
@@ -547,7 +537,9 @@ def rustc_compile_action(
         crate_info,
         output_hash = None,
         rust_flags = [],
-        environ = {}):
+        environ = {},
+        deps = None,
+        label = None):
     """Create and run a rustc compile action based on the current rule's attributes
 
     Args:
@@ -558,6 +550,8 @@ def rustc_compile_action(
         output_hash (str, optional): The hashed path of the crate root. Defaults to None.
         rust_flags (list, optional): Additional flags to pass to rustc. Defaults to [].
         environ (dict, optional): A set of makefile expandable environment variables for the action
+        deps (provider stuff): Document
+        label (Label): The label for the rule/aspect
 
     Returns:
         list: A list of the following providers:
@@ -568,8 +562,8 @@ def rustc_compile_action(
     cc_toolchain, feature_configuration = find_cc_toolchain(ctx)
 
     dep_info, build_info = collect_deps(
-        label = ctx.label,
-        deps = crate_info.deps,
+        label = label if label else ctx.label,
+        deps = deps if deps else crate_info.deps,
         proc_macro_deps = crate_info.proc_macro_deps,
         aliases = crate_info.aliases,
     )
@@ -616,7 +610,7 @@ def rustc_compile_action(
         mnemonic = "Rustc",
         progress_message = "Compiling Rust {} {}{} ({} files)".format(
             crate_info.type,
-            ctx.label.name,
+            label if label else ctx.label.name,
             formatted_version,
             len(crate_info.srcs.to_list()),
         ),

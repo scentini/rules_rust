@@ -80,3 +80,14 @@ ClippyInfo = provider(
         "output": "File with the clippy output.",
     },
 )
+
+BuildInfo = provider(
+    doc = "A provider containing `rustc` build settings for a given Crate.",
+    fields = {
+        "dep_env": "File: extra build script environment varibles to be set to direct dependencies.",
+        "flags": "File: file containing additional flags to pass to rustc",
+        "link_flags": "File: file containing flags to pass to the linker",
+        "out_dir": "File: directory containing the result of a build script",
+        "rustc_env": "File: file containing additional environment variables to set for rustc.",
+    },
+)

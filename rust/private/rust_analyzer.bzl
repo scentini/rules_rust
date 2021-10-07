@@ -22,7 +22,7 @@ to Cargo.toml files.
 
 load("//rust/platform:triple_mappings.bzl", "system_to_dylib_ext", "triple_to_system")
 load("//rust/private:common.bzl", "rust_common")
-load("//rust/private:rustc.bzl", "BuildInfo")
+load("//rust:rust_common.bzl", "BuildInfo")
 load("//rust/private:utils.bzl", "find_toolchain")
 
 RustAnalyzerInfo = provider(

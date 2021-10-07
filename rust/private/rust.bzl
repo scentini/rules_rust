@@ -14,6 +14,7 @@
 
 # buildifier: disable=module-docstring
 load("//rust/private:common.bzl", "rust_common")
+load("//rust:rust_common.bzl", "CrateInfo", "DepInfo", "BuildInfo")
 load("//rust/private:rustc.bzl", "rustc_compile_action")
 load(
     "//rust/private:utils.bzl",
@@ -60,7 +61,7 @@ def _assert_correct_dep_mapping(ctx):
                 ),
             )
 
-def _determine_lib_name(name, crate_type, toolchain, lib_hash = ""):
+def determine_lib_name(name, crate_type, toolchain, lib_hash = ""):
     """See https://github.com/bazelbuild/rules_rust/issues/405
 
     Args:
@@ -113,7 +114,7 @@ def get_edition(attr, toolchain):
     Returns:
         str: The target Rust edition
     """
-    if getattr(attr, "edition"):
+    if hasattr(attr, "edition") and getattr(attr, "edition"):
         return attr.edition
     else:
         return toolchain.default_edition
@@ -242,13 +243,25 @@ def _rust_library_common(ctx, crate_type):
     output_hash = determine_output_hash(crate_root)
 
     crate_name = crate_name_from_attr(ctx.attr)
-    rust_lib_name = _determine_lib_name(
+    rust_lib_name = determine_lib_name(
         crate_name,
         crate_type,
         toolchain,
         output_hash,
     )
     rust_lib = ctx.actions.declare_file(rust_lib_name)
+
+    deps = [struct(crate_info = dep[CrateInfo] if CrateInfo in dep else None,
+              dep_info = dep[DepInfo] if DepInfo in dep else None,
+              build_info = dep[BuildInfo] if BuildInfo in dep else None,
+              label = dep.label,
+              name = dep.label.name) for dep in ctx.attr.deps]
+
+    proc_macro_deps = [struct(crate_info = dep[CrateInfo] if CrateInfo in dep else None,
+              dep_info = dep[DepInfo] if DepInfo in dep else None,
+              build_info = dep[BuildInfo] if BuildInfo in dep else None,
+              label = dep.label,
+              name = dep.label.name) for dep in ctx.attr.proc_macro_deps]
 
     return rustc_compile_action(
         ctx = ctx,
@@ -259,8 +272,8 @@ def _rust_library_common(ctx, crate_type):
             type = crate_type,
             root = crate_root,
             srcs = depset(ctx.files.srcs),
-            deps = depset(ctx.attr.deps),
-            proc_macro_deps = depset(ctx.attr.proc_macro_deps),
+            deps = depset(deps),
+            proc_macro_deps = depset(proc_macro_deps),
             aliases = ctx.attr.aliases,
             output = rust_lib,
             edition = get_edition(ctx.attr, toolchain),
