@@ -4,6 +4,7 @@ aspects_flags: &aspects_flags
   - "--config=clippy"
 default_linux_targets: &default_linux_targets
   - "//..."
+  - "-//test/incompatible_changes/..."
   # TODO: Switch manual tag to platform constraint after bazel 4.0.
   - "//test/versioned_dylib:versioned_dylib_test"
 default_macos_targets: &default_macos_targets
@@ -11,6 +12,7 @@ default_macos_targets: &default_macos_targets
 default_windows_targets: &default_windows_targets
   - "--" # Allows negative patterns; hack for https://github.com/bazelbuild/continuous-integration/pull/245
   - "//..."
+  - "-//test/incompatible_changes/..."
   - "-//bindgen/..."
   - "-//test/proto/..."
   - "-//tools/rust_analyzer/..."
@@ -28,6 +30,7 @@ tasks:
     test_targets:
       - "--" # Allows negative patterns; hack for https://github.com/bazelbuild/continuous-integration/pull/245
       - "//..."
+      - "-//test/incompatible_changes/..."
       - "//test/..."
       - "-//test/conflicting_deps:conflicting_deps_test"
   macos:
