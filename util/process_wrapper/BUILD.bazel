@@ -7,6 +7,9 @@ rust_binary_without_process_wrapper(
     name = "process_wrapper",
     srcs = glob(["*.rs"]),
     visibility = ["//visibility:public"],
+    deps = [
+        "@tinyjson",
+    ],
 )
 
 rust_test(
