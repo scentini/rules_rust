@@ -25,7 +25,7 @@ load(
     "get_import_macro_deps",
     "transform_deps",
 )
-
+load("@bazel_skylib//lib:paths.bzl", "paths")
 # TODO(marco): Separate each rule into its own file.
 
 def _assert_no_deprecated_attributes(_ctx):
@@ -262,6 +262,12 @@ def _rust_library_common(ctx, crate_type):
         output_hash,
     )
     rust_lib = ctx.actions.declare_file(rust_lib_name)
+    rust_metadata = None
+    if crate_type in ("lib", "rlib") and ctx.attr._process_wrapper:
+        rust_metadata = ctx.actions.declare_file(
+            paths.replace_extension(rust_lib_name, ".rmeta"),
+            sibling = rust_lib,
+        )
 
     deps = transform_deps(ctx.attr.deps)
     proc_macro_deps = transform_deps(ctx.attr.proc_macro_deps + get_import_macro_deps(ctx))
@@ -279,6 +285,7 @@ def _rust_library_common(ctx, crate_type):
             proc_macro_deps = depset(proc_macro_deps),
             aliases = ctx.attr.aliases,
             output = rust_lib,
+            metadata = rust_metadata,
             edition = get_edition(ctx.attr, toolchain),
             rustc_env = ctx.attr.rustc_env,
             is_test = False,
