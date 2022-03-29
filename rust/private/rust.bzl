@@ -245,14 +245,14 @@ def _rust_library_common(ctx, crate_type):
     toolchain = find_toolchain(ctx)
 
     # Determine unique hash for this rlib.
-    # Note that we don't include a hash for `cdylib` since they are meant to be consumed externally and having a
-    # deterministic name is important since it ends up embedded in the executable. This is problematic when one needs
-    # to include the library with a specific filename into a larger application.
+    # Note that we don't include a hash for `cdylib` and `staticlib` since they are meant to be consumed externally
+    # and having a deterministic name is important since it ends up embedded in the executable. This is problematic
+    # when one needs to include the library with a specific filename into a larger application.
     # (see https://github.com/bazelbuild/rules_rust/issues/405#issuecomment-993089889 for more details)
-    if crate_type != "cdylib":
-        output_hash = determine_output_hash(crate_root, ctx.label)
-    else:
+    if crate_type in ["cdylib", "staticlib"]:
         output_hash = None
+    else:
+        output_hash = determine_output_hash(crate_root, ctx.label)
 
     crate_name = compute_crate_name(ctx.workspace_name, ctx.label, toolchain, ctx.attr.crate_name)
     rust_lib_name = _determine_lib_name(
@@ -929,14 +929,27 @@ rust_binary = rule(
 """),
 )
 
-def _fake_out_process_wrapper(attrs):
+def _common_attrs_for_binary_without_process_wrapper(attrs):
     new_attr = dict(attrs.items())
+
+    # use a fake process wrapper
     new_attr["_process_wrapper"] = attr.label(
         default = None,
         executable = True,
         allow_single_file = True,
         cfg = "exec",
     )
+
+    # fix stamp = 0
+    new_attr["stamp"] = attr.int(
+        doc = dedent("""\
+            Fix `stamp = 0` as stamping is not supported when building without process_wrapper:
+            https://github.com/bazelbuild/rules_rust/blob/8df4517d370b0c543a01ba38b63e1d5a4104b035/rust/private/rustc.bzl#L955
+        """),
+        default = 0,
+        values = [0],
+    )
+
     return new_attr
 
 # Provides an internal rust_binary to use that we can use to build the process
@@ -945,7 +958,7 @@ def _fake_out_process_wrapper(attrs):
 rust_binary_without_process_wrapper = rule(
     implementation = _rust_binary_impl,
     provides = _common_providers,
-    attrs = dict(_fake_out_process_wrapper(_common_attrs).items() + _rust_binary_attrs.items()),
+    attrs = dict(_common_attrs_for_binary_without_process_wrapper(_common_attrs).items() + _rust_binary_attrs.items()),
     executable = True,
     fragments = ["cpp"],
     host_fragments = ["cpp"],

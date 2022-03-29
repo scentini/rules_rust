@@ -1,4 +1,4 @@
-load("@crate_index//:defs.bzl", "aliases", "all_crate_deps")
+load("@crate_universe_crate_index//:defs.bzl", "aliases", "all_crate_deps")
 load("@rules_rust//rust:defs.bzl", "rust_binary")
 load(":cross_installer_deps.bzl", "cross_binary")
 
@@ -32,6 +32,13 @@ filegroup(
     srcs = [
         "BUILD.bazel",
         "Cargo.toml",
+        "cross_installer_deps.bzl",
     ],
+    visibility = ["//crate_universe/tools:__pkg__"],
+)
+
+filegroup(
+    name = "bzl_srcs",
+    srcs = glob(["**/*.bzl"]),
     visibility = ["//crate_universe/tools:__pkg__"],
 )

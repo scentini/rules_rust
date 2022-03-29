@@ -6,13 +6,28 @@ Crate Universe is a set of Bazel rule for generating Rust targets using Cargo.
 
 `crate_universe` is experimental, and may have breaking API changes at any time. These instructions may also change without notice.
 
+## Setup
+
+After loading `rules_rust` in your workspace, set the following to begin using `crate_universe`:
+
+```python
+load("@rules_rust//crate_universe:repositories.bzl", "crate_universe_dependencies")
+
+crate_universe_dependencies()
+```
+
+Note that if the current version of `rules_rust` is not a release artifact, you may need to set additional
+flags such as [`bootstrap = True`](#crate_universe_dependencies-bootstrap) on the `crate_universe_dependencies`
+call above or [crates_repository::generator_urls](#crates_repository-generator_urls) in uses of `crates_repository`.
+
 ## Rules
 
+- [crate_universe_dependencies](#crate_universe_dependencies)
 - [crates_repository](#crates_repository)
 - [crates_vendor](#crates_vendor)
+- [crate.annotation](#crateannotation)
 - [crate.spec](#cratespec)
 - [crate.workspace_member](#crateworkspace_member)
-- [crate.annotation](#crateannotation)
 - [render_config](#render_config)
 - [splicing_config](#splicing_config)
 
@@ -25,10 +40,10 @@ the [./examples/crate_universe](https://github.com/bazelbuild/rules_rust/tree/ma
 ### Cargo Workspaces
 
 One of the simpler ways to wire up dependencies would be to first structure your project into a [Cargo workspace][cw].
-The `crates_repository` rule can ingest a the root `Cargo.toml` file and generate dependencies from there.
+The `crates_repository` rule can ingest a root `Cargo.toml` file and generate dependencies from there.
 
 ```python
-load("@rules_rust//crate_universe:defs.bzl", "crate", "crates_repository")
+load("@rules_rust//crate_universe:defs.bzl", "crates_repository")
 
 crates_repository(
     name = "crate_index",
@@ -142,8 +157,13 @@ rust_test(
 [cc]: https://docs.bazel.build/versions/main/be/c-cpp.html
 [proto]: https://rules-proto-grpc.com/en/latest/lang/rust.html
 [ra]: https://rust-analyzer.github.io/
+
 """
 
+load(
+    "//crate_universe:repositories.bzl",
+    _crate_universe_dependencies = "crate_universe_dependencies",
+)
 load(
     "//crate_universe/private:crate.bzl",
     _crate = "crate",
@@ -166,6 +186,7 @@ load(
 )
 
 crate = _crate
+crate_universe_dependencies = _crate_universe_dependencies
 crates_repository = _crates_repository
 crates_vendor = _crates_vendor
 render_config = _render_config
