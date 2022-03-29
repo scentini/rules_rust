@@ -1,0 +1,22 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library")
+
+rust_library(
+    name = "foo",
+    srcs = [
+        "foo/lib.rs",
+    ],
+)
+
+rust_library(
+    name = "bar",
+    srcs = [
+        "bar/lib.rs",
+    ],
+    deps = [":foo"]
+)
+
+rust_binary(
+    name = "baz",
+    srcs = ["baz/main.rs"],
+    deps = [":bar"],
+)

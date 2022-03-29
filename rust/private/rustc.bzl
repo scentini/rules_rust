@@ -198,13 +198,9 @@ def collect_deps(
                 ),
             )
 
-            # If both the current crate and the underlying dependency are libs
-            # we can add a metadata dependency.
-            # We also need to add a dependency on regular .rlib files for crates
-            # that require objects.
-            emit = _emit_rmeta(parent_info)
-            emit_dep = _emit_rmeta(crate_info)
-            if emit and emit_dep:
+            # If we are producing metadata for this file, add it and its
+            # metadata dependencies to the transitive_metadata_outputs
+            if crate_info.metadata:
                 transitive_metadata_outputs.append(
                     depset(
                         [crate_info.metadata],
@@ -560,11 +556,6 @@ def collect_inputs(
     print("crate out: ", dep_info.transitive_crate_outputs)
     print("meta out: ", dep_info.transitive_metadata_outputs)
 
-    transitive_crate_outputs = dep_info.transitive_crate_outputs
-    if _emit_rmeta(crate_info) and dep_info.transitive_metadata_outputs:
-        print("using meta")
-        transitive_crate_outputs = dep_info.transitive_metadata_outputs
-
     nolinkstamp_compile_inputs = depset(
         getattr(files, "data", []) +
         ([build_info.rustc_env, build_info.flags] if build_info else []) +
@@ -573,7 +564,9 @@ def collect_inputs(
         transitive = [
             linker_depset,
             crate_info.srcs,
-            transitive_crate_outputs,
+            # We always need these:
+            dep_info.transitive_metadata_outputs,
+            dep_info.transitive_crate_outputs if not crate_info.metadata else depset([]),
             depset(additional_transitive_inputs),
             crate_info.compile_data,
             toolchain.all_files,
@@ -862,7 +855,7 @@ def construct_arguments(
         _add_native_link_flags(rustc_flags, dep_info, linkstamp_outs, ambiguous_libs, crate_info.type, toolchain, cc_toolchain, feature_configuration)
 
     # These always need to be added, even if not linking this crate.
-    add_crate_link_flags(rustc_flags, dep_info, force_all_deps_direct)
+    add_crate_link_flags(rustc_flags, dep_info, force_all_deps_direct, crate_info)
 
     needs_extern_proc_macro_flag = "proc-macro" in [crate_info.type, crate_info.wrapped_crate_type] and \
                                    crate_info.edition != "2015"
@@ -1318,7 +1311,7 @@ def _get_dir_names(files):
         dirs[f.dirname] = None
     return dirs.keys()
 
-def add_crate_link_flags(args, dep_info, force_all_deps_direct = False):
+def add_crate_link_flags(args, dep_info, force_all_deps_direct = False, crate_info = None):
     """Adds link flags to an Args object reference
 
     Args:
@@ -1327,7 +1320,7 @@ def add_crate_link_flags(args, dep_info, force_all_deps_direct = False):
         force_all_deps_direct (bool, optional): Whether to pass the transitive rlibs with --extern
             to the commandline as opposed to -L.
     """
-    if not dep_info.transitive_metadata_outputs:
+    if crate_info.type == "bin":
         if force_all_deps_direct:
             args.add_all(
                 depset(
@@ -1353,6 +1346,8 @@ def add_crate_link_flags(args, dep_info, force_all_deps_direct = False):
             uniquify = True,
             map_each = _crate_to_link_flag_metadata,
         )
+
+        args.add_all(dep_info.direct_crates, map_each = _crate_to_link_flag)
     else:
         # nb. Direct crates are linked via --extern regardless of their crate_type
         args.add_all(dep_info.direct_crates, map_each = _crate_to_link_flag_metadata)
