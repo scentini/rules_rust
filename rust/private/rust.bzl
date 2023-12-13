@@ -28,6 +28,7 @@ load(
     "determine_output_hash",
     "expand_dict_value_locations",
     "find_toolchain",
+    "generate_output_diagnostics",
     "get_edition",
     "get_import_macro_deps",
     "transform_deps",
@@ -168,11 +169,13 @@ def _rust_library_common(ctx, crate_type):
     )
     rust_lib = ctx.actions.declare_file(rust_lib_name)
     rust_metadata = None
+    rustc_rmeta_output = None
     if can_build_metadata(toolchain, ctx, crate_type) and not ctx.attr.disable_pipelining:
         rust_metadata = ctx.actions.declare_file(
             paths.replace_extension(rust_lib_name, ".rmeta"),
             sibling = rust_lib,
         )
+        rustc_rmeta_output = generate_output_diagnostics(ctx, rust_metadata)
 
     deps = transform_deps(ctx.attr.deps)
     proc_macro_deps = transform_deps(ctx.attr.proc_macro_deps + get_import_macro_deps(ctx))
@@ -191,7 +194,9 @@ def _rust_library_common(ctx, crate_type):
             proc_macro_deps = depset(proc_macro_deps),
             aliases = ctx.attr.aliases,
             output = rust_lib,
+            rustc_output = generate_output_diagnostics(ctx, rust_lib),
             metadata = rust_metadata,
+            rustc_rmeta_output = rustc_rmeta_output,
             edition = get_edition(ctx.attr, toolchain, ctx.label),
             rustc_env = ctx.attr.rustc_env,
             rustc_env_files = ctx.files.rustc_env_files,
@@ -239,6 +244,7 @@ def _rust_binary_impl(ctx):
             proc_macro_deps = depset(proc_macro_deps),
             aliases = ctx.attr.aliases,
             output = output,
+            rustc_output = generate_output_diagnostics(ctx, output),
             edition = get_edition(ctx.attr, toolchain, ctx.label),
             rustc_env = ctx.attr.rustc_env,
             rustc_env_files = ctx.files.rustc_env_files,
@@ -312,6 +318,7 @@ def _rust_test_impl(ctx):
             proc_macro_deps = depset(proc_macro_deps, transitive = [crate.proc_macro_deps]),
             aliases = ctx.attr.aliases,
             output = output,
+            rustc_output = generate_output_diagnostics(ctx, output),
             edition = crate.edition,
             rustc_env = rustc_env,
             rustc_env_files = rustc_env_files,
@@ -355,6 +362,7 @@ def _rust_test_impl(ctx):
             proc_macro_deps = depset(proc_macro_deps),
             aliases = ctx.attr.aliases,
             output = output,
+            rustc_output = generate_output_diagnostics(ctx, output),
             edition = get_edition(ctx.attr, toolchain, ctx.label),
             rustc_env = rustc_env,
             rustc_env_files = ctx.files.rustc_env_files,
@@ -626,10 +634,10 @@ _common_attrs = {
         cfg = "exec",
     ),
     "_is_proc_macro_dep": attr.label(
-        default = Label("//:is_proc_macro_dep"),
+        default = Label("//rust/private:is_proc_macro_dep"),
     ),
     "_is_proc_macro_dep_enabled": attr.label(
-        default = Label("//:is_proc_macro_dep_enabled"),
+        default = Label("//rust/private:is_proc_macro_dep_enabled"),
     ),
     "_per_crate_rustc_flag": attr.label(
         default = Label("//:experimental_per_crate_rustc_flag"),
@@ -640,6 +648,9 @@ _common_attrs = {
         executable = True,
         allow_single_file = True,
         cfg = "exec",
+    ),
+    "_rustc_output_diagnostics": attr.label(
+        default = Label("//:rustc_output_diagnostics"),
     ),
     "_stamp_flag": attr.label(
         doc = "A setting used to determine whether or not the `--stamp` flag is enabled",
@@ -876,14 +887,14 @@ rust_shared_library = rule(
 )
 
 def _proc_macro_dep_transition_impl(settings, _attr):
-    if settings["//:is_proc_macro_dep_enabled"]:
-        return {"//:is_proc_macro_dep": True}
+    if settings["//rust/private:is_proc_macro_dep_enabled"]:
+        return {"//rust/private:is_proc_macro_dep": True}
     else:
         return []
 
 _proc_macro_dep_transition = transition(
-    inputs = ["//:is_proc_macro_dep_enabled"],
-    outputs = ["//:is_proc_macro_dep"],
+    inputs = ["//rust/private:is_proc_macro_dep_enabled"],
+    outputs = ["//rust/private:is_proc_macro_dep"],
     implementation = _proc_macro_dep_transition_impl,
 )
 

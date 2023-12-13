@@ -6,14 +6,15 @@ use cfg_expr::{Expression, Predicate};
 
 use crate::context::CrateContext;
 use crate::utils::starlark::Select;
+use crate::utils::target_triple::TargetTriple;
 
 /// Walk through all dependencies in a [CrateContext] list for all configuration specific
-/// dependencies to produce a mapping of configuration to compatible platform triples.
-/// Also adds mappings for all known platform triples.
+/// dependencies to produce a mapping of configurations/Cargo target_triples to compatible
+/// Bazel target_triples.  Also adds mappings for all known target_triples.
 pub fn resolve_cfg_platforms(
     crates: Vec<&CrateContext>,
-    supported_platform_triples: &BTreeSet<String>,
-) -> Result<BTreeMap<String, BTreeSet<String>>> {
+    supported_platform_triples: &BTreeSet<TargetTriple>,
+) -> Result<BTreeMap<String, BTreeSet<TargetTriple>>> {
     // Collect all unique configurations from all dependencies into a single set
     let configurations: BTreeSet<String> = crates
         .iter()
@@ -44,17 +45,19 @@ pub fn resolve_cfg_platforms(
     // Generate target information for each triple string
     let target_infos = supported_platform_triples
         .iter()
-        .map(|t| match get_builtin_target_by_triple(t) {
-            Some(info) => Ok(info),
-            None => Err(anyhow!(
-                "Invalid platform triple in supported platforms: {}",
-                t
-            )),
-        })
-        .collect::<Result<Vec<&'static TargetInfo>>>()?;
+        .map(
+            |target_triple| match get_builtin_target_by_triple(&target_triple.to_cargo()) {
+                Some(info) => Ok((target_triple, info)),
+                None => Err(anyhow!(
+                    "Invalid platform triple in supported platforms: {}",
+                    target_triple
+                )),
+            },
+        )
+        .collect::<Result<BTreeMap<&TargetTriple, &'static TargetInfo>>>()?;
 
     // `cfg-expr` does not understand configurations that are simply platform triples
-    // (`x86_64-unknown-linux-gun` vs `cfg(target = "x86_64-unkonwn-linux-gnu")`). So
+    // (`x86_64-unknown-linux-gnu` vs `cfg(target = "x86_64-unkonwn-linux-gnu")`). So
     // in order to parse configurations, the text is renamed for the check but the
     // original is retained for comaptibility with the manifest.
     let rename = |cfg: &str| -> String { format!("cfg(target = \"{cfg}\")") };
@@ -64,12 +67,12 @@ pub fn resolve_cfg_platforms(
         .map(|cfg| (rename(cfg), cfg.clone()))
         .collect();
 
-    configurations
+    let mut conditions = configurations
         .into_iter()
         // `cfg-expr` requires that the expressions be actual `cfg` expressions. Any time
         // there's a target triple (which is a valid constraint), convert it to a cfg expression.
         .map(|cfg| match cfg.starts_with("cfg(") {
-            true => cfg.to_string(),
+            true => cfg,
             false => rename(&cfg),
         })
         // Check the current configuration with against each supported triple
@@ -79,17 +82,17 @@ pub fn resolve_cfg_platforms(
 
             let triples = target_infos
                 .iter()
-                .filter(|info| {
+                .filter(|(_, target_info)| {
                     expression.eval(|p| match p {
-                        Predicate::Target(tp) => tp.matches(**info),
+                        Predicate::Target(tp) => tp.matches(**target_info),
                         Predicate::KeyValue { key, val } => {
-                            *key == "target" && val == &info.triple.as_str()
+                            *key == "target" && val == &target_info.triple.as_str()
                         }
                         // For now there is no other kind of matching
                         _ => false,
                     })
                 })
-                .map(|info| info.triple.to_string())
+                .map(|(triple, _)| (*triple).clone())
                 .collect();
 
             // Map any renamed configurations back to their original IDs
@@ -100,11 +103,16 @@ pub fn resolve_cfg_platforms(
 
             Ok((cfg, triples))
         })
-        .chain(supported_platform_triples.iter().filter_map(|triple| {
-            let target = get_builtin_target_by_triple(triple);
-            target.map(|target| Ok((triple.clone(), [target.triple.to_string()].into())))
-        }))
-        .collect()
+        .collect::<Result<BTreeMap<String, BTreeSet<TargetTriple>>>>()?;
+    for target_triple in supported_platform_triples.iter() {
+        let target = get_builtin_target_by_triple(&target_triple.to_cargo())
+            .expect("TargetTriple has already been validated by `cargo tree` invocation");
+        conditions
+            .entry(target.triple.to_string())
+            .or_default()
+            .insert(target_triple.clone());
+    }
+    Ok(conditions)
 }
 
 #[cfg(test)]
@@ -116,11 +124,11 @@ mod test {
 
     use super::*;
 
-    fn supported_platform_triples() -> BTreeSet<String> {
+    fn supported_platform_triples() -> BTreeSet<TargetTriple> {
         BTreeSet::from([
-            "aarch64-apple-darwin".to_owned(),
-            "i686-apple-darwin".to_owned(),
-            "x86_64-unknown-linux-gnu".to_owned(),
+            TargetTriple::from_bazel("aarch64-apple-darwin".to_owned()),
+            TargetTriple::from_bazel("i686-apple-darwin".to_owned()),
+            TargetTriple::from_bazel("x86_64-unknown-linux-gnu".to_owned()),
         ])
     }
 
@@ -155,15 +163,17 @@ mod test {
                 // All known triples.
                 (
                     "aarch64-apple-darwin".to_owned(),
-                    BTreeSet::from(["aarch64-apple-darwin".to_owned()]),
+                    BTreeSet::from([TargetTriple::from_bazel("aarch64-apple-darwin".to_owned())]),
                 ),
                 (
                     "i686-apple-darwin".to_owned(),
-                    BTreeSet::from(["i686-apple-darwin".to_owned()]),
+                    BTreeSet::from([TargetTriple::from_bazel("i686-apple-darwin".to_owned())]),
                 ),
                 (
                     "x86_64-unknown-linux-gnu".to_owned(),
-                    BTreeSet::from(["x86_64-unknown-linux-gnu".to_owned()]),
+                    BTreeSet::from([TargetTriple::from_bazel(
+                        "x86_64-unknown-linux-gnu".to_owned()
+                    )]),
                 ),
             ])
         )
@@ -196,13 +206,15 @@ mod test {
         let data = BTreeMap::from([
             (
                 r#"cfg(target = "x86_64-unknown-linux-gnu")"#.to_owned(),
-                BTreeSet::from(["x86_64-unknown-linux-gnu".to_owned()]),
+                BTreeSet::from([TargetTriple::from_bazel(
+                    "x86_64-unknown-linux-gnu".to_owned(),
+                )]),
             ),
             (
                 r#"cfg(any(target_os = "macos", target_os = "ios"))"#.to_owned(),
                 BTreeSet::from([
-                    "aarch64-apple-darwin".to_owned(),
-                    "i686-apple-darwin".to_owned(),
+                    TargetTriple::from_bazel("aarch64-apple-darwin".to_owned()),
+                    TargetTriple::from_bazel("i686-apple-darwin".to_owned()),
                 ]),
             ),
         ]);
@@ -220,15 +232,19 @@ mod test {
                     // All known triples.
                     (
                         "aarch64-apple-darwin".to_owned(),
-                        BTreeSet::from(["aarch64-apple-darwin".to_owned()]),
+                        BTreeSet::from([TargetTriple::from_bazel(
+                            "aarch64-apple-darwin".to_owned()
+                        )]),
                     ),
                     (
                         "i686-apple-darwin".to_owned(),
-                        BTreeSet::from(["i686-apple-darwin".to_owned()]),
+                        BTreeSet::from([TargetTriple::from_bazel("i686-apple-darwin".to_owned())]),
                     ),
                     (
                         "x86_64-unknown-linux-gnu".to_owned(),
-                        BTreeSet::from(["x86_64-unknown-linux-gnu".to_owned()]),
+                        BTreeSet::from([TargetTriple::from_bazel(
+                            "x86_64-unknown-linux-gnu".to_owned()
+                        )]),
                     ),
                 ])
             );
@@ -266,20 +282,24 @@ mod test {
             BTreeMap::from([
                 (
                     configuration,
-                    BTreeSet::from(["x86_64-unknown-linux-gnu".to_owned()])
+                    BTreeSet::from([TargetTriple::from_bazel(
+                        "x86_64-unknown-linux-gnu".to_owned()
+                    )])
                 ),
                 // All known triples.
                 (
                     "aarch64-apple-darwin".to_owned(),
-                    BTreeSet::from(["aarch64-apple-darwin".to_owned()]),
+                    BTreeSet::from([TargetTriple::from_bazel("aarch64-apple-darwin".to_owned())]),
                 ),
                 (
                     "i686-apple-darwin".to_owned(),
-                    BTreeSet::from(["i686-apple-darwin".to_owned()]),
+                    BTreeSet::from([TargetTriple::from_bazel("i686-apple-darwin".to_owned())]),
                 ),
                 (
                     "x86_64-unknown-linux-gnu".to_owned(),
-                    BTreeSet::from(["x86_64-unknown-linux-gnu".to_owned()]),
+                    BTreeSet::from([TargetTriple::from_bazel(
+                        "x86_64-unknown-linux-gnu".to_owned()
+                    )]),
                 ),
             ])
         );
@@ -318,15 +338,17 @@ mod test {
                 // All known triples.
                 (
                     "aarch64-apple-darwin".to_owned(),
-                    BTreeSet::from(["aarch64-apple-darwin".to_owned()]),
+                    BTreeSet::from([TargetTriple::from_bazel("aarch64-apple-darwin".to_owned())]),
                 ),
                 (
                     "i686-apple-darwin".to_owned(),
-                    BTreeSet::from(["i686-apple-darwin".to_owned()]),
+                    BTreeSet::from([TargetTriple::from_bazel("i686-apple-darwin".to_owned())]),
                 ),
                 (
                     "x86_64-unknown-linux-gnu".to_owned(),
-                    BTreeSet::from(["x86_64-unknown-linux-gnu".to_owned()]),
+                    BTreeSet::from([TargetTriple::from_bazel(
+                        "x86_64-unknown-linux-gnu".to_owned()
+                    )]),
                 ),
             ])
         );

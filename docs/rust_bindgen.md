@@ -130,6 +130,11 @@ rust_bindgen_dependencies()
 Declare dependencies needed for bindgen.
 
 
+**RETURNS**
+
+list[struct(repo=str, is_dev_dep=bool)]: A list of the repositories
+  defined by this macro.
+
 
 <a id="rust_bindgen_library"></a>
 

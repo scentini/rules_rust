@@ -22,7 +22,12 @@ BINDGEN_VERSION = "0.65.1"
 
 # buildifier: disable=unnamed-macro
 def rust_bindgen_dependencies():
-    """Declare dependencies needed for bindgen."""
+    """Declare dependencies needed for bindgen.
+
+    Returns:
+        list[struct(repo=str, is_dev_dep=bool)]: A list of the repositories
+        defined by this macro.
+    """
 
     maybe(
         http_archive,
@@ -38,9 +43,10 @@ def rust_bindgen_dependencies():
         ],
     )
 
+    bindgen_name = "rules_rust_bindgen__bindgen-cli-{}".format(BINDGEN_VERSION)
     maybe(
         http_archive,
-        name = "rules_rust_bindgen__bindgen-cli-{}".format(BINDGEN_VERSION),
+        name = bindgen_name,
         sha256 = "33373a4e0ec8b6fa2654e0c941ad16631b0d564cfd20e7e4b3db4c5b28f4a237",
         type = "tar.gz",
         urls = ["https://crates.io/api/v1/crates/bindgen-cli/{}/download".format(BINDGEN_VERSION)],
@@ -48,7 +54,12 @@ def rust_bindgen_dependencies():
         build_file = Label("//bindgen/3rdparty:BUILD.bindgen-cli.bazel"),
     )
 
-    crate_repositories()
+    direct_deps = [
+        struct(repo = "llvm-raw", is_dev_dep = False),
+        struct(repo = bindgen_name, is_dev_dep = False),
+    ]
+    direct_deps.extend(crate_repositories())
+    return direct_deps
 
 # buildifier: disable=unnamed-macro
 def rust_bindgen_register_toolchains(register_toolchains = True):

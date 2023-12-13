@@ -14,13 +14,18 @@ def crate_universe_dependencies(rust_version = rust_common.default_version, boot
         rust_version (str, optional): The version of rust to use when generating dependencies.
         bootstrap (bool, optional): If true, a `cargo_bootstrap_repository` target will be generated.
         **kwargs: Arguments to pass through to cargo_bazel_bootstrap.
+
+    Returns:
+        list[struct(repo=str, is_dev_dep=bool)]: A list of the repositories
+        defined by this macro.
     """
     third_party_deps()
 
     if bootstrap:
         cargo_bazel_bootstrap(rust_version = rust_version, **kwargs)
 
-    _vendor_crate_repositories()
+    direct_deps = _vendor_crate_repositories()
 
     crates_vendor_deps()
     cross_installer_deps()
+    return direct_deps

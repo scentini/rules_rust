@@ -25,8 +25,15 @@ def rust_wasm_bindgen_dependencies():
     """Declare dependencies needed for the `rules_rust` [wasm-bindgen][wb] rules.
 
     [wb]: https://github.com/rustwasm/wasm-bindgen
+
+    Returns:
+        list[struct(repo=str, is_dev_dep=bool)]: A list of the repositories
+        defined by this macro.
     """
 
+    direct_deps = [
+        struct(repo = "rules_rust_wasm_bindgen_cli", is_dev_dep = False),
+    ]
     maybe(
         http_archive,
         name = "rules_rust_wasm_bindgen_cli",
@@ -39,7 +46,8 @@ def rust_wasm_bindgen_dependencies():
         patches = [Label("//wasm_bindgen/3rdparty/patches:resolver.patch")],
     )
 
-    crate_repositories()
+    direct_deps.extend(crate_repositories())
+    return direct_deps
 
 # buildifier: disable=unnamed-macro
 def rust_wasm_bindgen_register_toolchains(register_toolchains = True):

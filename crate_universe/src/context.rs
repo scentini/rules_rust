@@ -14,8 +14,9 @@ use crate::config::CrateId;
 use crate::context::crate_context::{CrateContext, CrateDependency, Rule};
 use crate::context::platforms::resolve_cfg_platforms;
 use crate::lockfile::Digest;
-use crate::metadata::Annotations;
-use crate::utils::starlark::Select;
+use crate::metadata::{Annotations, Dependency};
+use crate::utils::starlark::{Select, SelectList};
+use crate::utils::target_triple::TargetTriple;
 
 pub use self::crate_context::*;
 
@@ -37,7 +38,13 @@ pub struct Context {
     pub workspace_members: BTreeMap<CrateId, String>,
 
     /// A mapping of `cfg` flags to platform triples supporting the configuration
-    pub conditions: BTreeMap<String, BTreeSet<String>>,
+    pub conditions: BTreeMap<String, BTreeSet<TargetTriple>>,
+
+    /// A list of crates visible to any bazel module.
+    pub direct_deps: BTreeSet<CrateId>,
+
+    /// A list of crates visible to this bazel module.
+    pub direct_dev_deps: BTreeSet<CrateId>,
 }
 
 impl Context {
@@ -99,7 +106,7 @@ impl Context {
                     Ok(id) => id,
                     Err(e) => return Some(Err(e)),
                 };
-                let crate_id = CrateId::new(pkg.name.clone(), pkg.version.to_string());
+                let crate_id = CrateId::from(pkg);
 
                 // Crates that have repository information are not considered workspace members.
                 // The assumpion is that they are "extra workspace members".
@@ -110,12 +117,35 @@ impl Context {
             })
             .collect::<Result<BTreeMap<CrateId, String>>>()?;
 
+        let add_crate_ids = |crates: &mut BTreeSet<CrateId>, deps: &SelectList<Dependency>| {
+            for dep in deps.iter_all_branches() {
+                crates.insert(CrateId::from(
+                    &annotations.metadata.packages[&dep.package_id],
+                ));
+            }
+        };
+
+        let mut direct_deps: BTreeSet<CrateId> = BTreeSet::new();
+        let mut direct_dev_deps: BTreeSet<CrateId> = BTreeSet::new();
+        for id in &annotations.metadata.workspace_members {
+            let deps = &annotations.metadata.crates[id].deps;
+            add_crate_ids(&mut direct_deps, &deps.normal_deps);
+            add_crate_ids(&mut direct_deps, &deps.proc_macro_deps);
+            add_crate_ids(&mut direct_deps, &deps.build_deps);
+            add_crate_ids(&mut direct_deps, &deps.build_link_deps);
+            add_crate_ids(&mut direct_deps, &deps.build_proc_macro_deps);
+            add_crate_ids(&mut direct_dev_deps, &deps.normal_dev_deps);
+            add_crate_ids(&mut direct_dev_deps, &deps.proc_macro_dev_deps);
+        }
+
         Ok(Self {
             checksum: None,
             crates,
             binary_crates,
             workspace_members,
             conditions,
+            direct_dev_deps: direct_dev_deps.difference(&direct_deps).cloned().collect(),
+            direct_deps,
         })
     }
 

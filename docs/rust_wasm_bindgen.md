@@ -154,6 +154,12 @@ Declare dependencies needed for the `rules_rust` [wasm-bindgen][wb] rules.
 
 
 
+**RETURNS**
+
+list[struct(repo=str, is_dev_dep=bool)]: A list of the repositories
+  defined by this macro.
+
+
 <a id="rust_wasm_bindgen_register_toolchains"></a>
 
 ## rust_wasm_bindgen_register_toolchains
